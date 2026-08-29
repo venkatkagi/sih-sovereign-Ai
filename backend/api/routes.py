@@ -5,7 +5,7 @@ from collections.abc import AsyncIterator
 from pathlib import Path
 from typing import Any, Optional
 
-from fastapi import APIRouter, FastAPI, File, Form, HTTPException, Query, UploadFile
+from fastapi import APIRouter, BackgroundTasks, FastAPI, File, Form, HTTPException, Query, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, StreamingResponse
 from pydantic import BaseModel, Field
@@ -399,14 +399,23 @@ async def get_workspace_tree():
     return workspace_manager.get_tree()
 
 
+def _safe_bg_rag_ingest(path: Path) -> None:
+    """Helper to index uploaded documents into RAG vector store asynchronously."""
+    try:
+        default_rag_service.ingest(path)
+    except Exception as e:
+        logger.warning(f"Background auto-ingest notice for {path.name}: {e}")
+
+
 @router.post("/workspace/upload")
-async def upload_to_workspace(
+async def upload_workspace_file(
     file: UploadFile = File(...),
-    subdir: str = Form(default="input"),
+    subdir: str = Form("documents"),
+    background_tasks: BackgroundTasks = BackgroundTasks(),
 ):
     """
-    Upload a file safely into a controlled workspace subdirectory (e.g. 'documents', 'input').
-    Automatically triggers background RAG vector indexing if the file is a document.
+    Save an uploaded file directly into the local workspace (e.g. input/ or documents/).
+    Returns immediately so the LLM receives the input without delay.
     """
     if not file.filename:
         raise HTTPException(status_code=400, detail="Filename required.")
@@ -416,21 +425,16 @@ async def upload_to_workspace(
         saved_path = workspace_manager.save_file(subdir=subdir, filename=file.filename, content=contents)
         rel_path = str(saved_path.relative_to(workspace_manager.root))
         
-        # Auto-index into RAG vector store if placed in documents or input
-        chunks_indexed = 0
+        # Asynchronously schedule background indexing without blocking the response
         if saved_path.suffix.lower() in (".pdf", ".docx", ".txt", ".md", ".png", ".jpg", ".jpeg"):
-            try:
-                ingest_res = default_rag_service.ingest(saved_path)
-                chunks_indexed = ingest_res.get("chunks_indexed", 0)
-            except Exception as e:
-                logger.warning(f"Auto-ingest warning for {saved_path.name}: {e}")
+            background_tasks.add_task(_safe_bg_rag_ingest, saved_path)
 
         return {
             "status": "success",
             "filename": saved_path.name,
             "relative_path": rel_path,
             "size_bytes": len(contents),
-            "chunks_indexed": chunks_indexed,
+            "chunks_indexed": 0,
             "message": f"Saved '{saved_path.name}' to workspace/{rel_path}",
         }
     except WorkspaceSecurityError as sec_err:

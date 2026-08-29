@@ -169,26 +169,21 @@ export default function App() {
       if (attachedFiles && attachedFiles.length > 0) {
         for (const item of attachedFiles) {
           if (controller.signal.aborted) break;
-          const rawFile = item.file || (item instanceof File ? item : null);
-          let assignedPath = item.path || item.name || (rawFile ? rawFile.name : null);
-
-          if (rawFile) {
-            try {
-              const wsRes = await uploadWorkspaceFile(rawFile, 'input');
-              if (wsRes && wsRes.relative_path) {
-                assignedPath = wsRes.relative_path;
+          if (item.path) {
+            resolvedPaths.push(item.path);
+          } else {
+            const rawFile = item.file || (item instanceof File ? item : null);
+            if (rawFile) {
+              try {
+                const wsRes = await uploadWorkspaceFile(rawFile, 'input');
+                resolvedPaths.push(wsRes?.relative_path || `input/${rawFile.name}`);
+              } catch (e) {
+                console.warn('Fast upload notice:', e);
+                resolvedPaths.push(`input/${rawFile.name}`);
               }
-            } catch (e) {
-              console.warn('Workspace upload error:', e);
+            } else if (item.name) {
+              resolvedPaths.push(item.name);
             }
-            try {
-              await uploadDocument(rawFile);
-            } catch (e) {
-              console.warn('RAG document upload error:', e);
-            }
-          }
-          if (assignedPath) {
-            resolvedPaths.push(assignedPath);
           }
         }
       }
