@@ -554,6 +554,174 @@ def create_pdf_document(
         }
 
 
+def resolve_workspace_file_path(file_path: str) -> Optional[Path]:
+    """Helper to locate a file across workspace directories."""
+    raw_p = Path(file_path.strip())
+    if raw_p.is_absolute() and raw_p.exists():
+        return raw_p
+
+    clean = file_path.strip().lstrip("/\\")
+    direct = Path(clean)
+    if direct.is_absolute() and direct.exists():
+        return direct
+
+    candidates = [
+        _PROJECT_ROOT / "workspace" / clean,
+        _PROJECT_ROOT / "workspace" / "input" / clean,
+        _PROJECT_ROOT / "workspace" / "documents" / clean,
+        _PROJECT_ROOT / "workspace" / "projects" / clean,
+        _PROJECT_ROOT / "workspace" / "output" / clean,
+        _PROJECT_ROOT / "data" / "uploads" / clean,
+        _PROJECT_ROOT / clean,
+    ]
+    for c in candidates:
+        if c.exists() and c.is_file():
+            return c
+    return None
+
+
+def edit_pdf_document(
+    file_path: str,
+    output_filename: Optional[str] = None,
+    watermark_text: Optional[str] = None,
+    header_text: Optional[str] = None,
+    footer_text: Optional[str] = None,
+    append_text: Optional[str] = None,
+    output_dir: str = WORKSPACE_OUTPUT_DIR,
+) -> dict[str, Any]:
+    """
+    Read and edit an existing PDF document in the workspace.
+    Supports adding watermarks, header/footer annotations, and appending new pages.
+    """
+    resolved = resolve_workspace_file_path(file_path)
+    if not resolved:
+        return {
+            "success": False,
+            "error": f"PDF file '{file_path}' not found in workspace.",
+        }
+
+    os.makedirs(output_dir, exist_ok=True)
+    if not output_filename:
+        base = resolved.stem
+        output_filename = f"{base}_edited_{int(time.time())}.pdf"
+    elif not output_filename.endswith(".pdf"):
+        output_filename = f"{output_filename}.pdf"
+
+    target_path = os.path.join(output_dir, output_filename)
+
+    try:
+        import pymupdf as fitz
+        doc = fitz.open(str(resolved))
+
+        for page in doc:
+            rect = page.rect
+            if header_text:
+                page.insert_text((50, 30), header_text, fontsize=9, color=(0.2, 0.3, 0.4))
+            if footer_text:
+                page.insert_text((50, rect.height - 30), footer_text, fontsize=9, color=(0.3, 0.3, 0.3))
+            if watermark_text:
+                center_x = max(50, rect.width / 2 - (len(watermark_text) * 5))
+                center_y = rect.height / 2
+                page.insert_text((center_x, center_y), watermark_text, fontsize=20, color=(0.8, 0.2, 0.2))
+
+        if append_text:
+            new_page = doc.new_page()
+            rect = new_page.rect
+            text_rect = fitz.Rect(50, 50, rect.width - 50, rect.height - 50)
+            new_page.insert_textbox(text_rect, append_text, fontsize=11, color=(0.1, 0.1, 0.1))
+
+        doc.save(target_path)
+        doc.close()
+        size_bytes = os.path.getsize(target_path)
+
+        return {
+            "success": True,
+            "filename": output_filename,
+            "file_path": os.path.abspath(target_path),
+            "relative_path": f"output/{output_filename}",
+            "size_bytes": size_bytes,
+            "message": f"Successfully edited PDF document: saved to 'output/{output_filename}' ({size_bytes} bytes).",
+        }
+    except Exception as e:
+        logger.error(f"Failed to edit PDF document: {e}", exc_info=True)
+        return {
+            "success": False,
+            "error": f"PDF edit error: {str(e)}",
+        }
+
+
+def read_workspace_document(
+    file_path: str,
+    max_chars: int = 8000,
+) -> dict[str, Any]:
+    """
+    Read and extract text from an input document or file in the workspace.
+    Supports PDF, DOCX, XLSX, TXT, CSV, Markdown, and JSON files.
+    """
+    resolved = resolve_workspace_file_path(file_path)
+    if not resolved:
+        return {
+            "success": False,
+            "error": f"File '{file_path}' not found in workspace or uploads.",
+        }
+
+    ext = resolved.suffix.lower()
+    content_text = ""
+    try:
+        if ext == ".pdf":
+            import pymupdf as fitz
+            doc = fitz.open(str(resolved))
+            pages_text = []
+            for i, page in enumerate(doc):
+                txt = page.get_text()
+                if txt.strip():
+                    pages_text.append(f"--- Page {i + 1} ---\n{txt}")
+            doc.close()
+            content_text = "\n\n".join(pages_text) if pages_text else "(No extractable text found; document may require OCR)"
+        elif ext in (".xlsx", ".xls"):
+            import openpyxl
+            wb = openpyxl.load_workbook(str(resolved), data_only=True)
+            sheets_text = []
+            for name in wb.sheetnames:
+                ws = wb[name]
+                rows = list(ws.iter_rows(values_only=True))
+                sheet_lines = [f"### Sheet: {name}"]
+                for r in rows[:100]:
+                    if any(cell is not None for cell in r):
+                        sheet_lines.append(" | ".join(str(c) if c is not None else "" for c in r))
+                sheets_text.append("\n".join(sheet_lines))
+            wb.close()
+            content_text = "\n\n".join(sheets_text)
+        elif ext == ".docx":
+            import docx
+            doc = docx.Document(str(resolved))
+            paras = [p.text for p in doc.paragraphs if p.text.strip()]
+            content_text = "\n".join(paras)
+        else:
+            content_text = resolved.read_text(encoding="utf-8", errors="replace")
+
+        truncated = False
+        if len(content_text) > max_chars:
+            content_text = content_text[:max_chars] + f"\n...[Truncated: {len(content_text)} total characters]"
+            truncated = True
+
+        return {
+            "success": True,
+            "filename": resolved.name,
+            "path": str(resolved.relative_to(_PROJECT_ROOT) if resolved.is_relative_to(_PROJECT_ROOT) else resolved),
+            "extension": ext,
+            "content": content_text,
+            "total_chars": len(content_text),
+            "truncated": truncated,
+        }
+    except Exception as e:
+        logger.error(f"Error reading document '{file_path}': {e}", exc_info=True)
+        return {
+            "success": False,
+            "error": f"Error reading document: {str(e)}",
+        }
+
+
 def create_markdown_document(
     title: str,
     content: str,
@@ -692,24 +860,13 @@ def edit_excel_spreadsheet(
     Read and edit an existing Excel spreadsheet (.xlsx) in the workspace.
     Supports updating specific cells (e.g. {'B2': 150.0, 'C3': 'Approved'}) and appending new rows.
     """
-    target_path = file_path
-    if not os.path.isabs(target_path):
-        candidates = [
-            os.path.join("output", target_path),
-            os.path.join("documents", target_path),
-            os.path.join("workspace", target_path),
-            target_path,
-        ]
-        for c in candidates:
-            if os.path.exists(c):
-                target_path = c
-                break
-
-    if not os.path.exists(target_path):
+    resolved = resolve_workspace_file_path(file_path)
+    if not resolved:
         return {
             "success": False,
             "error": f"Excel file '{file_path}' not found in workspace.",
         }
+    target_path = str(resolved)
 
     try:
         import openpyxl
@@ -751,10 +908,12 @@ def edit_excel_spreadsheet(
             "file_path": os.path.abspath(target_path),
             "filename": os.path.basename(target_path),
             "updated_cells": updated_cells_count,
+            "updated_cells_count": updated_cells_count,
             "appended_rows": appended_rows_count,
+            "appended_rows_count": appended_rows_count,
             "total_rows": ws.max_row,
             "size_bytes": size_bytes,
-            "message": f"Successfully updated '{os.path.basename(target_path)}' ({updated_cells_count} cells updated, {appended_rows_count} rows appended).",
+            "message": f"Successfully updated Excel spreadsheet '{os.path.basename(target_path)}' ({updated_cells_count} cells modified, {appended_rows_count} rows appended).",
         }
     except Exception as e:
         logger.error(f"Failed to edit Excel spreadsheet: {e}", exc_info=True)
@@ -1012,6 +1171,41 @@ GENERATE_REPORT_FILE_TOOL = ToolDefinition(
 )
 
 
+EDIT_PDF_DOCUMENT_TOOL = ToolDefinition(
+    name="edit_pdf_document",
+    description="Edit an existing PDF document in the workspace: overlay watermarks, add header/footer text, or append new content pages.",
+    required_skill="Document Engineering",
+    parameters={
+        "type": "object",
+        "properties": {
+            "file_path": {"type": "string", "description": "Filename or path of the existing PDF file to edit."},
+            "output_filename": {"type": "string", "description": "Optional output PDF filename."},
+            "watermark_text": {"type": "string", "description": "Watermark or stamp text across pages (e.g. 'CONFIDENTIAL', 'APPROVED')."},
+            "header_text": {"type": "string", "description": "Header text to place at the top of each page."},
+            "footer_text": {"type": "string", "description": "Footer text to place at the bottom of each page."},
+            "append_text": {"type": "string", "description": "Text notes or markdown content to append as a new page."},
+        },
+        "required": ["file_path"],
+    },
+    func=edit_pdf_document,
+)
+
+READ_WORKSPACE_DOCUMENT_TOOL = ToolDefinition(
+    name="read_workspace_document",
+    description="Read and inspect the text and tabular content of any input document (PDF, Excel XLSX, Word DOCX, TXT, CSV, Markdown, JSON) in the workspace.",
+    required_skill="Precision Reading",
+    parameters={
+        "type": "object",
+        "properties": {
+            "file_path": {"type": "string", "description": "Filename or path of the document to read."},
+            "max_chars": {"type": "integer", "description": "Maximum characters to extract (default: 8000).", "default": 8000},
+        },
+        "required": ["file_path"],
+    },
+    func=read_workspace_document,
+)
+
+
 class ToolRegistry:
     """Catalog managing all agent tools and execution dispatcher."""
 
@@ -1028,6 +1222,8 @@ class ToolRegistry:
             RUN_PYTHON_SANDBOX_TOOL,
             GENERATE_REPORT_FILE_TOOL,
             CREATE_PDF_DOCUMENT_TOOL,
+            EDIT_PDF_DOCUMENT_TOOL,
+            READ_WORKSPACE_DOCUMENT_TOOL,
             CREATE_MARKDOWN_DOCUMENT_TOOL,
             CREATE_EXCEL_SPREADSHEET_TOOL,
             EDIT_EXCEL_SPREADSHEET_TOOL,

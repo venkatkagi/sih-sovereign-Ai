@@ -12,8 +12,13 @@ from backend.ai.tools import (
     ToolDefinition,
     ToolRegistry,
     calculate_expression,
+    create_excel_spreadsheet,
+    create_pdf_document,
+    edit_excel_spreadsheet,
+    edit_pdf_document,
     generate_report_file,
     get_document_page,
+    read_workspace_document,
     run_python_sandbox,
     search_documents,
     tool_registry,
@@ -120,6 +125,70 @@ class TestTools(unittest.TestCase):
             self.assertEqual(a_res["result"], 81)
 
         asyncio.run(run_async())
+
+
+    def test_pdf_creation_and_editing(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            # 1. Create PDF
+            pdf_res = create_pdf_document(
+                title="Safety Inspection Report",
+                content="# Section 1: Findings\n- Valve inspected\n- All safety criteria met.",
+                output_filename="test_report.pdf",
+                output_dir=temp_dir,
+            )
+            self.assertTrue(pdf_res["success"])
+            self.assertTrue(os.path.exists(pdf_res["file_path"]))
+
+            # 2. Edit PDF (Watermark & Append Page)
+            edit_res = edit_pdf_document(
+                file_path=pdf_res["file_path"],
+                output_filename="test_report_annotated.pdf",
+                watermark_text="AUDITED & APPROVED",
+                header_text="VaultMind Official Review",
+                footer_text="Page 1 | Verified",
+                append_text="# Appendix A\nAdditional verified compliance metrics.",
+                output_dir=temp_dir,
+            )
+            self.assertTrue(edit_res["success"])
+            self.assertTrue(os.path.exists(edit_res["file_path"]))
+            self.assertGreater(edit_res["size_bytes"], 100)
+
+            # 3. Read edited PDF via read_workspace_document
+            read_res = read_workspace_document(edit_res["file_path"])
+            self.assertTrue(read_res["success"])
+            self.assertIn("Safety Inspection", read_res["content"])
+
+    def test_excel_creation_and_editing(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            # 1. Create Excel spreadsheet
+            xls_res = create_excel_spreadsheet(
+                title="Equipment Inventory",
+                headers=["ID", "Name", "Cost", "Status"],
+                rows=[
+                    ["EQ-01", "Centrifugal Pump", 4500.0, "Operational"],
+                    ["EQ-02", "Pressure Relief Valve", 850.0, "Pending Inspection"],
+                ],
+                output_filename="inventory.xlsx",
+                output_dir=temp_dir,
+            )
+            self.assertTrue(xls_res["success"])
+            self.assertTrue(os.path.exists(xls_res["file_path"]))
+
+            # 2. Edit Excel spreadsheet (Update cells & Append rows)
+            edit_res = edit_excel_spreadsheet(
+                file_path=xls_res["file_path"],
+                cell_updates={"D3": "Approved & Certified"},
+                append_rows=[["EQ-03", "Heat Exchanger", 12000.0, "Operational"]],
+            )
+            self.assertTrue(edit_res["success"])
+            self.assertEqual(edit_res["updated_cells_count"], 1)
+            self.assertEqual(edit_res["appended_rows_count"], 1)
+
+            # 3. Read spreadsheet via read_workspace_document
+            read_res = read_workspace_document(xls_res["file_path"])
+            self.assertTrue(read_res["success"])
+            self.assertIn("Centrifugal Pump", read_res["content"])
+            self.assertIn("Heat Exchanger", read_res["content"])
 
 
 if __name__ == "__main__":

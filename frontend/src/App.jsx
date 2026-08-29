@@ -14,7 +14,7 @@ import BottomChatBar from './components/main/BottomChatBar';
 import EmptyChatState from './components/main/EmptyChatState';
 import UnifiedArtifactViewer from './components/main/UnifiedArtifactViewer';
 import { AVAILABLE_MODELS } from './data/mockData';
-import { sendAgentMessage, uploadDocument, checkBackendHealth } from './services/api';
+import { sendAgentMessage, uploadDocument, uploadWorkspaceFile, checkBackendHealth } from './services/api';
 
 export default function App() {
   const [selectedFile, setSelectedFile] = useState(null);
@@ -165,21 +165,37 @@ export default function App() {
     ], generatedTitle);
 
     try {
+      const resolvedPaths = [];
       if (attachedFiles && attachedFiles.length > 0) {
         for (const item of attachedFiles) {
           if (controller.signal.aborted) break;
-          const rawFile = item.file || item;
-          try {
-            await uploadDocument(rawFile);
-          } catch (e) {
-            console.warn('Upload error:', e);
+          const rawFile = item.file || (item instanceof File ? item : null);
+          let assignedPath = item.path || item.name || (rawFile ? rawFile.name : null);
+
+          if (rawFile) {
+            try {
+              const wsRes = await uploadWorkspaceFile(rawFile, 'input');
+              if (wsRes && wsRes.relative_path) {
+                assignedPath = wsRes.relative_path;
+              }
+            } catch (e) {
+              console.warn('Workspace upload error:', e);
+            }
+            try {
+              await uploadDocument(rawFile);
+            } catch (e) {
+              console.warn('RAG document upload error:', e);
+            }
+          }
+          if (assignedPath) {
+            resolvedPaths.push(assignedPath);
           }
         }
       }
 
       if (controller.signal.aborted) return;
 
-      const fileNames = attachedFiles.map((f) => f.name || f.file?.name || (typeof f === 'string' ? f : 'document.pdf'));
+      const fileNames = resolvedPaths.length > 0 ? resolvedPaths : attachedFiles.map((f) => f.path || f.name || f.file?.name || 'document.pdf');
       const historyPayload = currentSession.messages
         .filter((m) => m.text && !m.isCreating)
         .map((m) => ({
