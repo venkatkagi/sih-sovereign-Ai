@@ -1,0 +1,54 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+*.egg
+*.egg-info/
+dist/
+build/
+.eggs/
+.env
+.venv
+env/
+venv/
+*.pyo
+
+# Node / Frontend
+node_modules/
+.next/
+dist/
+build/
+.cache/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Shell / personal dotfiles
+.bash_profile
+.bashrc
+.zshrc
+.zprofile
+.profile
+.gitconfig
+
+# MCP / local config
+.mcp.json
+
+# Ripgrep
+.ripgreprc
+
+# Antigravity / AI tooling
+.impeccable/
+
+# Data & output artifacts
+data/
+output/
+workspace/
