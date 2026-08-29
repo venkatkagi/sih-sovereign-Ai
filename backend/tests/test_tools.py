@@ -7,8 +7,10 @@ from backend.ai.tools import (
     CALCULATE_EXPRESSION_TOOL,
     GENERATE_REPORT_FILE_TOOL,
     GET_DOCUMENT_PAGE_TOOL,
+    LIST_WORKSPACE_FILES_TOOL,
     RUN_PYTHON_SANDBOX_TOOL,
     SEARCH_DOCUMENTS_TOOL,
+    SEARCH_WORKSPACE_FILES_TOOL,
     ToolDefinition,
     ToolRegistry,
     calculate_expression,
@@ -18,9 +20,11 @@ from backend.ai.tools import (
     edit_pdf_document,
     generate_report_file,
     get_document_page,
+    list_workspace_files,
     read_workspace_document,
     run_python_sandbox,
     search_documents,
+    search_workspace_files,
     tool_registry,
 )
 
@@ -189,6 +193,17 @@ class TestTools(unittest.TestCase):
             self.assertTrue(read_res["success"])
             self.assertIn("Centrifugal Pump", read_res["content"])
             self.assertIn("Heat Exchanger", read_res["content"])
+
+    def test_list_and_search_workspace_files(self):
+        # 1. List workspace files
+        list_res = list_workspace_files()
+        self.assertTrue(list_res["success"])
+        self.assertIsInstance(list_res["files"], list)
+
+        # 2. Search workspace files
+        search_res = search_workspace_files("darcy")
+        self.assertTrue(search_res["success"])
+        self.assertIsInstance(search_res["matches"], list)
 
 
 if __name__ == "__main__":

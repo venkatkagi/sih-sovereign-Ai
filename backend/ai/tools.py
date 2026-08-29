@@ -722,6 +722,105 @@ def read_workspace_document(
         }
 
 
+def list_workspace_files(subdir: Optional[str] = None) -> dict[str, Any]:
+    """
+    List all files and folders across the workspace (or within a specific folder like 'input', 'documents', 'output', 'projects').
+    Returns filenames, sizes, relative paths, and folders.
+    """
+    try:
+        root_dir = _PROJECT_ROOT / "workspace"
+        target_dir = root_dir / subdir if subdir else root_dir
+        if not target_dir.exists():
+            return {
+                "success": False,
+                "error": f"Folder '{subdir}' not found in workspace.",
+                "files": [],
+            }
+
+        files_list = []
+        for p in target_dir.rglob("*"):
+            if p.is_file() and not p.name.startswith("."):
+                rel = str(p.relative_to(root_dir))
+                stat = p.stat()
+                files_list.append({
+                    "name": p.name,
+                    "relative_path": rel,
+                    "folder": p.parent.name,
+                    "extension": p.suffix.lower().lstrip("."),
+                    "size_bytes": stat.st_size,
+                    "size_formatted": f"{stat.st_size / 1024:.1f} KB" if stat.st_size >= 1024 else f"{stat.st_size} B",
+                })
+
+        return {
+            "success": True,
+            "total_files": len(files_list),
+            "files": files_list,
+            "message": f"Found {len(files_list)} file(s) in workspace" + (f"/{subdir}" if subdir else ""),
+        }
+    except Exception as e:
+        logger.error(f"Error listing workspace files: {e}", exc_info=True)
+        return {
+            "success": False,
+            "error": f"Error listing workspace files: {str(e)}",
+        }
+
+
+def search_workspace_files(query: str, subdir: Optional[str] = None) -> dict[str, Any]:
+    """
+    Search and find files across the workspace by filename, extension, or text content keywords.
+    """
+    try:
+        root_dir = _PROJECT_ROOT / "workspace"
+        target_dir = root_dir / subdir if subdir else root_dir
+        q = query.lower().strip()
+
+        matched_files = []
+        for p in target_dir.rglob("*"):
+            if p.is_file() and not p.name.startswith("."):
+                rel = str(p.relative_to(root_dir))
+                name_match = q in p.name.lower()
+                content_snippet = ""
+
+                # Check text content for matching keywords
+                if not name_match and p.suffix.lower() in (".txt", ".md", ".csv", ".py", ".json", ".docx", ".pdf", ".xlsx"):
+                    try:
+                        read_res = read_workspace_document(str(p), max_chars=4000)
+                        if read_res.get("success"):
+                            c = read_res.get("content", "").lower()
+                            if q in c:
+                                idx = c.find(q)
+                                start = max(0, idx - 40)
+                                end = min(len(c), idx + 100)
+                                content_snippet = f"...{read_res['content'][start:end]}..."
+                    except Exception:
+                        pass
+
+                if name_match or content_snippet:
+                    stat = p.stat()
+                    matched_files.append({
+                        "name": p.name,
+                        "relative_path": rel,
+                        "folder": p.parent.name,
+                        "size_formatted": f"{stat.st_size / 1024:.1f} KB" if stat.st_size >= 1024 else f"{stat.st_size} B",
+                        "match_type": "filename" if name_match else "content",
+                        "snippet": content_snippet,
+                    })
+
+        return {
+            "success": True,
+            "query": query,
+            "total_matches": len(matched_files),
+            "matches": matched_files,
+            "message": f"Found {len(matched_files)} matching file(s) for '{query}' in workspace.",
+        }
+    except Exception as e:
+        logger.error(f"Error searching workspace files: {e}", exc_info=True)
+        return {
+            "success": False,
+            "error": f"Error searching workspace: {str(e)}",
+        }
+
+
 def create_markdown_document(
     title: str,
     content: str,
@@ -1205,6 +1304,43 @@ READ_WORKSPACE_DOCUMENT_TOOL = ToolDefinition(
     func=read_workspace_document,
 )
 
+LIST_WORKSPACE_FILES_TOOL = ToolDefinition(
+    name="list_workspace_files",
+    description="List all available documents, spreadsheets, reports, and code files stored in the local workspace directory structure.",
+    required_skill="Information Retrieval",
+    parameters={
+        "type": "object",
+        "properties": {
+            "subdir": {
+                "type": "string",
+                "description": "Optional subdirectory filter: 'input', 'documents', 'output', 'projects', 'sandbox'.",
+            },
+        },
+    },
+    func=list_workspace_files,
+)
+
+SEARCH_WORKSPACE_FILES_TOOL = ToolDefinition(
+    name="search_workspace_files",
+    description="Search and query the local workspace for specific files, spreadsheets, or documents by name or content keywords.",
+    required_skill="Information Retrieval",
+    parameters={
+        "type": "object",
+        "properties": {
+            "query": {
+                "type": "string",
+                "description": "Search keyword or phrase to match against filenames and document contents.",
+            },
+            "subdir": {
+                "type": "string",
+                "description": "Optional subdirectory filter (e.g. 'input', 'output', 'documents').",
+            },
+        },
+        "required": ["query"],
+    },
+    func=search_workspace_files,
+)
+
 
 class ToolRegistry:
     """Catalog managing all agent tools and execution dispatcher."""
@@ -1224,6 +1360,8 @@ class ToolRegistry:
             CREATE_PDF_DOCUMENT_TOOL,
             EDIT_PDF_DOCUMENT_TOOL,
             READ_WORKSPACE_DOCUMENT_TOOL,
+            LIST_WORKSPACE_FILES_TOOL,
+            SEARCH_WORKSPACE_FILES_TOOL,
             CREATE_MARKDOWN_DOCUMENT_TOOL,
             CREATE_EXCEL_SPREADSHEET_TOOL,
             EDIT_EXCEL_SPREADSHEET_TOOL,
