@@ -21,7 +21,7 @@ dist/
 build/
 .cache/
 
-# IDE
+# IDE & Editor
 .idea/
 .vscode/
 *.swp
@@ -38,17 +38,14 @@ Thumbs.db
 .zprofile
 .profile
 .gitconfig
-
-# MCP / local config
+.ripgreprc
+.claude/
+.impeccable/
 .mcp.json
 
-# Ripgrep
-.ripgreprc
-
-# Antigravity / AI tooling
-.impeccable/
-
-# Data & output artifacts
-data/
-output/
-workspace/
+# Ephemeral runtime data & sandbox caches
+data/chroma/
+data/test_*
+workspace/sandbox/task_*
+workspace/sandbox/*.py
+workspace/sandbox/*.log

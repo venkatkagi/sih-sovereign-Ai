@@ -1,0 +1,52 @@
+[
+  {
+    "question": "What inspection finding was reported for equipment CO-005 at the Trichy Power Station?",
+    "expected_document": "DOC-0005.txt",
+    "expected_finding": "corrosion found near the inlet connection"
+  },
+  {
+    "question": "What inspection finding was reported for equipment CO-012 at the Madurai Facility?",
+    "expected_document": "DOC-0012.txt",
+    "expected_finding": "excessive vibration observed in the rotating assembly"
+  },
+  {
+    "question": "What inspection finding was reported for equipment HE-023 at the Coimbatore Plant?",
+    "expected_document": "DOC-0023.txt",
+    "expected_finding": "abnormal temperature rise detected"
+  },
+  {
+    "question": "What inspection finding was reported for equipment BO-034 at the Salem Processing Unit?",
+    "expected_document": "DOC-0034.txt",
+    "expected_finding": "pressure fluctuation observed during operation"
+  },
+  {
+    "question": "What inspection finding was reported for equipment CO-045 at the Trichy Power Station?",
+    "expected_document": "DOC-0045.txt",
+    "expected_finding": "corrosion found near the inlet connection"
+  },
+  {
+    "question": "What inspection finding was reported for equipment PR-056 at the Erode Chemical Plant?",
+    "expected_document": "DOC-0056.txt",
+    "expected_finding": "bearing wear detected"
+  },
+  {
+    "question": "What inspection finding was reported for equipment CO-067 at the Vellore Manufacturing Unit?",
+    "expected_document": "DOC-0067.txt",
+    "expected_finding": "coolant leakage observed"
+  },
+  {
+    "question": "What inspection finding was reported for equipment AI-078 at the Tirunelveli Terminal?",
+    "expected_document": "DOC-0078.txt",
+    "expected_finding": "electrical insulation degradation detected"
+  },
+  {
+    "question": "What inspection finding was reported for equipment GA-089 at the Thanjavur Processing Plant?",
+    "expected_document": "DOC-0089.txt",
+    "expected_finding": "unusual noise detected during operation"
+  },
+  {
+    "question": "What inspection finding was reported for equipment DI-100 at the Dindigul Utility Station?",
+    "expected_document": "DOC-0100.txt",
+    "expected_finding": "no significant abnormality found"
+  }
+]
