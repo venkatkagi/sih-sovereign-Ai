@@ -105,11 +105,12 @@ class PgVectorStoreTests(unittest.TestCase):
         mock_conn = MockConnection(mock_cur)
         mock_connect.return_value = mock_conn
 
-        # Default initialization (production mode)
-        store = VectorStore()
-        self.assertEqual(store.backend_type, "postgresql")
-        self.assertTrue(store.is_pgvector)
-        self.assertIsInstance(store._impl, PgVectorStore)
+        # Default initialization in production mode
+        with patch.dict("os.environ", {"VECTOR_STORE_BACKEND": "postgres"}):
+            store = VectorStore()
+            self.assertEqual(store.backend_type, "postgresql")
+            self.assertTrue(store.is_pgvector)
+            self.assertIsInstance(store._impl, PgVectorStore)
 
     @patch("backend.vectorstore.pgvector_store.psycopg2.connect", side_effect=Exception("Database refused connection"))
     def test_production_postgresql_failure_raises_and_never_falls_back_to_chroma(self, mock_connect):
