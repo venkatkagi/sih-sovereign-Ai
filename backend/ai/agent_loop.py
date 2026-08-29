@@ -10,7 +10,7 @@ from typing import Any, Optional, Union
 from .model_types import ComplexityType, ModelConfig
 from .registry import ModelRegistry, model_registry
 from .router import DynamicRouter, RoutingDecision, model_router
-from .tools import ToolRegistry, tool_registry
+from .tools import ToolRegistry, resolve_workspace_file_path, tool_registry
 
 logger = logging.getLogger(__name__)
 
@@ -165,10 +165,15 @@ class ReActAgentEngine:
                     f"User Request: {user_msg['content']}"
                 )
 
-            valid_images = [
-                p for p in media_paths
-                if p.lower().endswith((".png", ".jpg", ".jpeg", ".webp", ".bmp"))
-            ]
+            valid_images = []
+            for p in media_paths:
+                if p.lower().endswith((".png", ".jpg", ".jpeg", ".webp", ".bmp", ".tiff")):
+                    resolved_img = resolve_workspace_file_path(p)
+                    if resolved_img and resolved_img.exists():
+                        valid_images.append(str(resolved_img.resolve()))
+                    elif os.path.exists(p):
+                        valid_images.append(os.path.abspath(p))
+
             if valid_images:
                 user_msg["images"] = valid_images
 

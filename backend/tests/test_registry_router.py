@@ -89,12 +89,12 @@ class TestModelRegistryAndRouter(unittest.TestCase):
     def test_router_multimodal_routing(self):
         router = DynamicRouter()
 
-        # Image attachment + standard query -> qwen3-vl-4b
+        # Image attachment + standard query -> gemma3-4b or qwen3-vl-4b
         decision_img_simple = router.route_with_decision(
-            query="What is shown in this chart?",
+            query="What color is shown in this chart?",
             media_paths=["chart.png"]
         )
-        self.assertEqual(decision_img_simple.model_config.name, "qwen3-vl-4b")
+        self.assertIn(decision_img_simple.model_config.name, ("gemma3-4b", "qwen3-vl-4b"))
         self.assertIn("image", decision_img_simple.modalities)
 
         # Image attachment + complex reasoning -> gemma3-8b

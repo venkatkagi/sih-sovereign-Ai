@@ -178,22 +178,21 @@ class DynamicRouter:
 
         if is_multimodal:
             if has_video:
-                # Only Qwen3-VL explicitly handles video modality
-                chosen_config = self.registry.get("qwen3-vl-4b")
+                chosen_config = self.registry.get("qwen3-vl-4b") or self.registry.get("gemma3-4b")
                 routing_reason = "Video modality detected -> Selected qwen3-vl-4b (Video capability)"
             elif complexity == "high":
-                chosen_config = self.registry.get("gemma3-8b") or self.registry.get("qwen3-vl-4b")
-                routing_reason = "Multimodal image input with High complexity -> Selected gemma3-8b (High reasoning)"
+                chosen_config = self.registry.get("gemma3-8b") or self.registry.get("gemma3-4b") or self.registry.get("qwen3-vl-4b")
+                routing_reason = "Multimodal image input with High complexity -> Selected gemma3-8b (High reasoning Gemma vision model)"
             else:
-                chosen_config = self.registry.get("qwen3-vl-4b")
-                routing_reason = f"Multimodal image input with {complexity.capitalize()} complexity -> Selected qwen3-vl-4b (Fast 4B multimodal model)"
+                chosen_config = self.registry.get("gemma3-4b") or self.registry.get("gemma3-8b") or self.registry.get("qwen3-vl-4b")
+                routing_reason = f"Multimodal image input with {complexity.capitalize()} complexity -> Selected gemma3-4b (Fast Gemma vision model)"
         else:
             if complexity == "high":
                 chosen_config = self.registry.get("qwen3-8b") or self.registry.get("qwen3-4b")
                 routing_reason = "Text-only input with High complexity -> Selected qwen3-8b (Deep reasoning & audit)"
             else:
                 chosen_config = self.registry.get("qwen3-4b")
-                routing_reason = f"Text-only input with {complexity.capitalize()} complexity -> Selected qwen3-4b (Fast 4B model)"
+                routing_reason = f"Text-only input with {complexity.capitalize()} complexity -> Selected qwen3-4b (Fast 4B text model)"
 
         # Fallback if preferred model wasn't found in registry
         if not chosen_config:
