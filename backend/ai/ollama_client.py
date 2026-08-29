@@ -25,13 +25,16 @@ class OllamaModel(ModelInterface):
         **kwargs
     ) -> dict[str, Any]:
         """Execute a chat step with optional tool definitions and fallback."""
+        has_images = any(bool(m.get("images")) for m in messages if isinstance(m, dict))
+        default_ctx = 8192 if not has_images else 16384
+        ctx_len = kwargs.get("num_ctx", int(os.getenv("OLLAMA_NUM_CTX", str(getattr(self.config, "context_length", default_ctx)))))
+        if has_images:
+            ctx_len = max(ctx_len, 8192)
+
         options = {
-            "temperature": kwargs.get(
-                "temperature",
-                self.config.temperature
-            ),
-            "num_ctx": kwargs.get("num_ctx", int(os.getenv("OLLAMA_NUM_CTX", "2048"))),
-            "num_predict": kwargs.get("num_predict", kwargs.get("max_tokens", 1024)),
+            "temperature": kwargs.get("temperature", self.config.temperature),
+            "num_ctx": ctx_len,
+            "num_predict": kwargs.get("num_predict", kwargs.get("max_tokens", 2048)),
         }
         params: dict[str, Any] = {
             "model": self.config.ollama_model,
@@ -50,6 +53,17 @@ class OllamaModel(ModelInterface):
             return {"role": "assistant", "content": "Local model response timed out. Please try again."}
         except Exception as e:
             err_str = str(e).lower()
+            if "exceed" in err_str and "context" in err_str:
+                logger.warning(f"Context overflow detected on {self.config.ollama_model}, expanding num_ctx to 16384...")
+                options["num_ctx"] = 16384
+                params["options"] = options
+                params.pop("tools", None)
+                try:
+                    response = await asyncio.wait_for(self.client.chat(**params), timeout=timeout_seconds)
+                    return response.get("message", {})
+                except Exception as retry_e:
+                    logger.error(f"Context expansion retry failed: {retry_e}")
+                    return {"role": "assistant", "content": f"Local model error: {retry_e}"}
             if "does not support tools" in err_str or "tools" in err_str:
                 params.pop("tools", None)
                 try:
@@ -78,10 +92,16 @@ class OllamaModel(ModelInterface):
         **kwargs
     ) -> AsyncIterator[dict[str, Any]]:
         """Stream chunks from Ollama in real-time, distinguishing thinking and content."""
+        has_images = any(bool(m.get("images")) for m in messages if isinstance(m, dict))
+        default_ctx = 8192 if not has_images else 16384
+        ctx_len = kwargs.get("num_ctx", int(os.getenv("OLLAMA_NUM_CTX", str(getattr(self.config, "context_length", default_ctx)))))
+        if has_images:
+            ctx_len = max(ctx_len, 8192)
+
         options = {
             "temperature": kwargs.get("temperature", self.config.temperature),
-            "num_ctx": kwargs.get("num_ctx", int(os.getenv("OLLAMA_NUM_CTX", "2048"))),
-            "num_predict": kwargs.get("num_predict", kwargs.get("max_tokens", 1024)),
+            "num_ctx": ctx_len,
+            "num_predict": kwargs.get("num_predict", kwargs.get("max_tokens", 2048)),
         }
         params: dict[str, Any] = {
             "model": self.config.ollama_model,
@@ -104,6 +124,26 @@ class OllamaModel(ModelInterface):
                 }
         except Exception as e:
             err_str = str(e).lower()
+            if "exceed" in err_str and "context" in err_str:
+                logger.warning(f"Context overflow on stream {self.config.ollama_model}, expanding num_ctx to 16384...")
+                options["num_ctx"] = 16384
+                params["options"] = options
+                params.pop("tools", None)
+                try:
+                    response = await self.client.chat(**params)
+                    async for chunk in response:
+                        msg = chunk.get("message", {})
+                        yield {
+                            "content": msg.get("content", ""),
+                            "thinking": msg.get("thinking", ""),
+                            "tool_calls": msg.get("tool_calls", []),
+                            "done": chunk.get("done", False),
+                        }
+                    return
+                except Exception as retry_err:
+                    logger.error(f"Context expansion stream failed: {retry_err}")
+                    yield {"content": f"Local model error: {retry_err}", "thinking": "", "tool_calls": [], "done": True}
+                    return
             if "does not support tools" in err_str or "tools" in err_str:
                 params.pop("tools", None)
                 try:

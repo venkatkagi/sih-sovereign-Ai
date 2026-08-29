@@ -147,32 +147,35 @@ class ReActAgentEngine:
         # If document or image attachments are present, enrich context
         if media_paths:
             doc_context_blocks = []
+            valid_images = []
+
             for p in media_paths:
                 clean_name = p.split("/")[-1]
-                read_res = self.tools.execute("read_workspace_document", {"file_path": p, "max_chars": 4000})
-                if read_res.get("success") and read_res.get("content"):
-                    doc_context_blocks.append(
-                        f"--- ATTACHED FILE: {clean_name} (Path: {read_res.get('path', p)}) ---\n"
-                        f"{read_res['content']}\n"
-                        f"--- END OF ATTACHED FILE ---"
-                    )
+                is_img = p.lower().endswith((".png", ".jpg", ".jpeg", ".webp", ".bmp", ".tiff"))
+
+                if is_img:
+                    resolved_img = resolve_workspace_file_path(p)
+                    if resolved_img and resolved_img.exists():
+                        valid_images.append(str(resolved_img.resolve()))
+                    elif os.path.exists(p):
+                        valid_images.append(os.path.abspath(p))
+                    doc_context_blocks.append(f"[ATTACHED IMAGE: {clean_name} (Inspected visually)]")
                 else:
-                    doc_context_blocks.append(f"[ATTACHED FILE REFERENCE: {clean_name} (Path: {p})]")
+                    read_res = self.tools.execute("read_workspace_document", {"file_path": p, "max_chars": 6000})
+                    if read_res.get("success") and read_res.get("content"):
+                        doc_context_blocks.append(
+                            f"--- ATTACHED FILE: {clean_name} (Path: {read_res.get('path', p)}) ---\n"
+                            f"{read_res['content']}\n"
+                            f"--- END OF ATTACHED FILE ---"
+                        )
+                    else:
+                        doc_context_blocks.append(f"[ATTACHED FILE REFERENCE: {clean_name} (Path: {p})]")
 
             if doc_context_blocks:
                 user_msg["content"] = (
                     f"{chr(10).join(doc_context_blocks)}\n\n"
                     f"User Request: {user_msg['content']}"
                 )
-
-            valid_images = []
-            for p in media_paths:
-                if p.lower().endswith((".png", ".jpg", ".jpeg", ".webp", ".bmp", ".tiff")):
-                    resolved_img = resolve_workspace_file_path(p)
-                    if resolved_img and resolved_img.exists():
-                        valid_images.append(str(resolved_img.resolve()))
-                    elif os.path.exists(p):
-                        valid_images.append(os.path.abspath(p))
 
             if valid_images:
                 user_msg["images"] = valid_images
