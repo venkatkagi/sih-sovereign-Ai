@@ -166,6 +166,7 @@ export default function AgentMessageThread({ messages, onCitationClick, onDownlo
                 <ExecutionProgressWidget
                   status="working"
                   statusMessage={msg.statusText || 'Processing with local model...'}
+                  attachedFiles={msg.attachedFiles}
                 />
               )}
 
@@ -193,6 +194,17 @@ export default function AgentMessageThread({ messages, onCitationClick, onDownlo
                   </div>
 
                   <div className="p-4 flex flex-col gap-3">
+                    {/* Ingested Input Files Banner */}
+                    {msg.attachedFiles?.length > 0 && (
+                      <div className="flex items-center gap-2 px-3 py-2 bg-[#131922] border border-blue-900/30 rounded-xl text-xs text-blue-200 font-mono">
+                        <FileText size={13} className="text-blue-400 shrink-0" />
+                        <span className="text-neutral-400">Context Source:</span>
+                        <span className="text-white font-medium truncate">{msg.attachedFiles.map(f => f.name || f).join(', ')}</span>
+                        <span className="text-[10px] text-blue-400 bg-blue-950/80 px-2 py-0.5 rounded-full ml-auto shrink-0">
+                          {msg.isCreating ? 'Loaded in Context' : 'Ingested'}
+                        </span>
+                      </div>
+                    )}
                     {/* Tool call records */}
                     {msg.toolCalls?.length > 0 && expandedTools[idx] && (
                       <div className="bg-[#121212] border border-[#2a2a2a] rounded-xl p-3 text-xs flex flex-col gap-2 font-mono">

@@ -7,10 +7,12 @@ import {
   FileText, 
   Image as ImageIcon, 
   FileCode,
+  FileSpreadsheet,
   Folder,
   Upload,
   X,
   Cpu,
+  Loader2,
   Sparkles
 } from 'lucide-react';
 import { AVAILABLE_MODELS } from '../../data/mockData';
@@ -26,14 +28,20 @@ export default function BottomChatBar({
   selectedModel, 
   setSelectedModel,
   placeholder = "Ask anything, or task a local agent...",
-  attachedFiles = [],
-  setAttachedFiles = () => {}
+  attachedFiles: parentAttachedFiles,
+  setAttachedFiles: parentSetAttachedFiles,
 }) {
   const [showAttachMenu, setShowAttachMenu] = useState(false);
   const [showModelMenu, setShowModelMenu] = useState(false);
   const [showWorkspaceModal, setShowWorkspaceModal] = useState(false);
   const [isUploading, setIsUploading] = useState(false);
+  const [uploadingName, setUploadingName] = useState('');
+  const [isDragging, setIsDragging] = useState(false);
   
+  const [internalAttachedFiles, setInternalAttachedFiles] = useState([]);
+  const attachedFiles = parentAttachedFiles !== undefined ? parentAttachedFiles : internalAttachedFiles;
+  const setAttachedFiles = parentSetAttachedFiles || setInternalAttachedFiles;
+
   const attachMenuRef = useRef(null);
   const modelMenuRef = useRef(null);
   const fileInputRef = useRef(null);
@@ -51,17 +59,17 @@ export default function BottomChatBar({
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
 
-  const handleLocalFileUpload = async (e) => {
-    const files = Array.from(e.target.files);
-    if (files.length === 0) return;
+  const handleProcessFiles = async (files) => {
+    if (!files || files.length === 0) return;
 
     setIsUploading(true);
     setShowAttachMenu(false);
 
     for (const f of files) {
+      setUploadingName(f.name);
       try {
-        const uploadRes = await uploadWorkspaceFile(f, 'documents');
-        const relPath = uploadRes.relative_path || `documents/${f.name}`;
+        const uploadRes = await uploadWorkspaceFile(f, 'input');
+        const relPath = uploadRes.relative_path || `input/${f.name}`;
         setAttachedFiles((prev) => [
           ...prev,
           {
@@ -78,13 +86,19 @@ export default function BottomChatBar({
           {
             file: f,
             name: f.name,
-            path: `documents/${f.name}`,
+            path: `input/${f.name}`,
             size_formatted: (f.size / 1024).toFixed(1) + ' KB',
           }
         ]);
       }
     }
     setIsUploading(false);
+    setUploadingName('');
+  };
+
+  const handleLocalFileUpload = async (e) => {
+    const files = Array.from(e.target.files);
+    await handleProcessFiles(files);
     e.target.value = '';
   };
 
@@ -101,7 +115,22 @@ export default function BottomChatBar({
   };
 
   const removeFile = (index) => {
-    setAttachedFiles(attachedFiles.filter((_, idx) => idx !== index));
+    setAttachedFiles((prev) => prev.filter((_, idx) => idx !== index));
+  };
+
+  const handleDrop = async (e) => {
+    e.preventDefault();
+    setIsDragging(false);
+    if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
+      await handleProcessFiles(Array.from(e.dataTransfer.files));
+    }
+  };
+
+  const handlePaste = async (e) => {
+    if (e.clipboardData.files && e.clipboardData.files.length > 0) {
+      e.preventDefault();
+      await handleProcessFiles(Array.from(e.clipboardData.files));
+    }
   };
 
   const handleKeyDown = (e) => {
@@ -127,38 +156,66 @@ export default function BottomChatBar({
     }
   };
 
+  const getFileIcon = (fileName = '') => {
+    const ext = fileName.split('.').pop()?.toLowerCase();
+    if (ext === 'pdf') return <FileText size={13} className="text-red-400 shrink-0" />;
+    if (['xlsx', 'xls', 'csv'].includes(ext)) return <FileSpreadsheet size={13} className="text-emerald-400 shrink-0" />;
+    if (['png', 'jpg', 'jpeg', 'webp'].includes(ext)) return <ImageIcon size={13} className="text-purple-400 shrink-0" />;
+    if (['py', 'js', 'json', 'sh'].includes(ext)) return <FileCode size={13} className="text-yellow-400 shrink-0" />;
+    return <FileText size={13} className="text-neutral-400 shrink-0" />;
+  };
+
   return (
     <div className="w-full max-w-3xl mx-auto px-4 relative select-none">
-      {/* Attached Files Badges like ChatGPT / Claude */}
-      {attachedFiles.length > 0 && (
-        <div className="flex items-center gap-2 mb-2 flex-wrap">
+      {/* Attached Files Badges Container inside/above Prompt Box */}
+      {(attachedFiles.length > 0 || isUploading) && (
+        <div className="flex items-center gap-2 mb-2 flex-wrap animate-fadeIn">
           {attachedFiles.map((file, idx) => (
-            <div key={idx} className="flex items-center gap-2 bg-[#202020] border border-[#333333] px-3 py-1.5 rounded-xl text-xs text-neutral-200 shadow-sm font-mono">
-              <FileText size={13} className="text-neutral-400 shrink-0" />
-              <span className="truncate max-w-[180px]">{file.name}</span>
+            <div 
+              key={idx} 
+              className="flex items-center gap-2 bg-[#202020] hover:bg-[#252525] border border-[#383838] px-3 py-1.5 rounded-xl text-xs text-neutral-200 shadow-md font-mono transition-all"
+            >
+              {getFileIcon(file.name)}
+              <span className="truncate max-w-[200px] font-medium text-white">{file.name}</span>
               {file.size_formatted && (
-                <span className="text-[10px] text-neutral-500 font-mono">({file.size_formatted})</span>
+                <span className="text-[10px] text-neutral-400 font-mono">({file.size_formatted})</span>
               )}
               <button 
                 type="button"
                 onClick={() => removeFile(idx)} 
-                className="hover:text-white text-neutral-500 ml-1 p-0.5 rounded transition cursor-pointer"
+                className="hover:text-red-400 text-neutral-500 ml-1 p-0.5 rounded transition cursor-pointer"
+                title="Remove attachment"
               >
                 <X size={12} />
               </button>
             </div>
           ))}
+
+          {isUploading && (
+            <div className="flex items-center gap-2 bg-[#1e293b] border border-blue-800/60 px-3 py-1.5 rounded-xl text-xs text-blue-200 shadow-md font-mono animate-pulse">
+              <Loader2 size={13} className="animate-spin text-blue-400" />
+              <span>Uploading {uploadingName || 'file'}...</span>
+            </div>
+          )}
         </div>
       )}
 
       {/* Main Input Box */}
-      <div className="relative bg-[#1c1c1c] border border-[#2a2a2a] rounded-2xl shadow-lg transition-all focus-within:border-neutral-500 focus-within:ring-1 focus-within:ring-neutral-500">
+      <div 
+        onDragOver={(e) => { e.preventDefault(); setIsDragging(true); }}
+        onDragLeave={() => setIsDragging(false)}
+        onDrop={handleDrop}
+        className={`relative bg-[#1c1c1c] border rounded-2xl shadow-lg transition-all focus-within:border-neutral-400 focus-within:ring-1 focus-within:ring-neutral-400 ${
+          isDragging ? 'border-blue-500 bg-[#162030]' : 'border-[#2a2a2a]'
+        }`}
+      >
         <textarea
           rows={2}
           value={prompt}
           onChange={(e) => setPrompt && setPrompt(e.target.value)}
           onKeyDown={handleKeyDown}
-          placeholder={placeholder}
+          onPaste={handlePaste}
+          placeholder={isDragging ? 'Drop file here to attach...' : placeholder}
           className="w-full bg-transparent text-white text-sm placeholder-neutral-500 px-4 pt-3.5 pb-12 focus:outline-none resize-none overflow-y-auto max-h-36 font-sans"
         />
 

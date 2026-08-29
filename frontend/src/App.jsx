@@ -242,6 +242,7 @@ export default function App() {
               thinking: parsedThinking,
               routingDecision: activeRouting,
               toolCalls: activeTools,
+              attachedFiles: userAttached,
               isCreating: true,
               statusText: parsedThinking
                 ? 'Thinking...'
@@ -307,6 +308,7 @@ export default function App() {
             toolCalls: assistantMsg.tool_calls || [],
             routingDecision: activeRouting,
             artifacts: artifacts,
+            attachedFiles: userAttached,
             isCreating: false,
           }
         ]);

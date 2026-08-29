@@ -5,29 +5,32 @@ export default function ExecutionProgressWidget({
   status = 'idle', // 'idle', 'working', 'completed', 'error'
   statusMessage = 'Working...',
   attachedFile = null,
+  attachedFiles = null,
   steps = [],
   timings = null,
   error = null,
 }) {
   if (status === 'idle') return null;
 
+  const rawFiles = attachedFiles || (attachedFile ? [attachedFile] : []);
+
   return (
     <div className="w-full my-4 rounded-2xl bg-[#181818] border border-[#2a2a2a] overflow-hidden text-xs text-neutral-200 shadow-sm">
-      {/* Attached File Chip like ChatGPT/Claude */}
-      {attachedFile && (
-        <div className="px-4 py-2.5 bg-[#141414] border-b border-[#262626] flex items-center justify-between">
-          <div className="flex items-center gap-2 text-neutral-300 font-mono text-[11px] truncate">
-            <FileText className="w-3.5 h-3.5 text-neutral-400 shrink-0" />
-            <span className="text-neutral-500">File:</span>
-            <span className="text-white font-medium truncate">
-              {attachedFile.name || attachedFile}
-            </span>
+      {/* Attached Files Chip Container */}
+      {rawFiles.length > 0 && (
+        <div className="px-4 py-2.5 bg-[#141414] border-b border-[#262626] flex items-center gap-2 flex-wrap">
+          <div className="flex items-center gap-1.5 text-neutral-400 font-mono text-[11px] mr-1 shrink-0">
+            <FileText className="w-3.5 h-3.5 text-blue-400 shrink-0" />
+            <span>Processing Input:</span>
           </div>
-          {attachedFile.size_formatted && (
-            <span className="text-[10px] text-neutral-500 font-mono">
-              {attachedFile.size_formatted}
+          {rawFiles.map((f, i) => (
+            <span key={i} className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-lg bg-[#202020] border border-[#333] text-white font-mono text-[11px]">
+              <span className="truncate max-w-[180px] font-medium">{f.name || f}</span>
+              {f.size_formatted && (
+                <span className="text-[10px] text-neutral-500 font-normal font-mono">({f.size_formatted})</span>
+              )}
             </span>
-          )}
+          ))}
         </div>
       )}
 
