@@ -46,6 +46,8 @@ Thumbs.db
 # Ephemeral runtime data & sandbox caches
 data/chroma/
 data/test_*
+workspace/output/approval_note_*
 workspace/sandbox/task_*
 workspace/sandbox/*.py
 workspace/sandbox/*.log
+workspace/sandbox/*.txt
