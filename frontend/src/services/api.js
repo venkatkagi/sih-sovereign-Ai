@@ -443,18 +443,22 @@ export async function runMultimodalWorkflow({ imagePath, prompt = null, onEvent 
   return await res.json();
 }
 
-export async function runAutoRouteWorkflow({ query, onEvent = null, signal = null }) {
+export async function runAutoRouteWorkflow({ query, mediaPaths = [], onEvent = null, signal = null }) {
+  const payload = {
+    query,
+    media_paths: mediaPaths,
+  };
   if (onEvent) {
     return await consumeSSE(
       `${API_BASE_URL}/workspace/workflow/autoroute/stream`,
-      { query },
+      payload,
       onEvent,
       signal
     );
   }
   return await consumeSSE(
     `${API_BASE_URL}/workspace/workflow/autoroute/stream`,
-    { query },
+    payload,
     () => {},
     signal
   );

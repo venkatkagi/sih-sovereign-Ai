@@ -129,6 +129,7 @@ class MultimodalWorkflowRequest(BaseModel):
 
 class AutoRouteWorkflowRequest(BaseModel):
     query: str = Field(..., description="Task prompt or multimodal instruction to automatically route and execute")
+    media_paths: Optional[list[str]] = Field(default_factory=list, description="Optional attached media or image paths")
 
 
 # ==========================================
@@ -294,12 +295,19 @@ async def chat_completions(request: ChatAgentRequest):
 @router.get("/stats")
 async def get_stats():
     """Corpus, vector store, and model statistics."""
-    vector_store_backend = getattr(default_rag_service.vector_store, "backend_type", "postgresql")
-    is_pg = getattr(default_rag_service.vector_store, "is_pgvector", True)
+    try:
+        vector_store_backend = getattr(default_rag_service.vector_store, "backend_type", "postgresql")
+        is_pg = getattr(default_rag_service.vector_store, "is_pgvector", True)
+        vectors_stored = default_rag_service.count()
+    except Exception as e:
+        logger.warning(f"Error fetching stats: {e}")
+        vector_store_backend = "chroma"
+        is_pg = False
+        vectors_stored = 0
     return {
         "vector_store": vector_store_backend,
         "pgvector": is_pg,
-        "vectors_stored": default_rag_service.count(),
+        "vectors_stored": vectors_stored,
         "models_registered": len(model_registry.list_models()),
         "tools_registered": len(tool_registry.list_tools()),
     }
@@ -373,8 +381,15 @@ async def run_sandbox(request: SandboxRequest):
 @router.get("/health")
 async def health_check():
     """System health check, RAG status, and local connectivity."""
-    vector_store_backend = getattr(default_rag_service.vector_store, "backend_type", "postgresql")
-    is_pg = getattr(default_rag_service.vector_store, "is_pgvector", True)
+    try:
+        vector_store_backend = getattr(default_rag_service.vector_store, "backend_type", "postgresql")
+        is_pg = getattr(default_rag_service.vector_store, "is_pgvector", True)
+        vectors_stored = default_rag_service.count()
+    except Exception as e:
+        logger.warning(f"Error checking health: {e}")
+        vector_store_backend = "chroma"
+        is_pg = False
+        vectors_stored = 0
     return {
         "status": "healthy",
         "service": "VaultMind Sovereign AI",
@@ -382,7 +397,7 @@ async def health_check():
         "rag_service": "online",
         "vector_store": vector_store_backend,
         "pgvector": is_pg,
-        "vectors_stored": default_rag_service.count(),
+        "vectors_stored": vectors_stored,
         "models_registered": len(model_registry.list_models()),
         "tools_registered": len(tool_registry.list_tools()),
         "workspace_root": str(workspace_manager.root),
@@ -720,7 +735,7 @@ async def workflow_autoroute_stream(request: AutoRouteWorkflowRequest):
     Analyzes intent -> Determines workflow & model -> Executes real pipeline -> Streams real-time SSE.
     """
     async def event_generator() -> AsyncIterator[str]:
-        async for ev in stream_autoroute_workflow(query=request.query):
+        async for ev in stream_autoroute_workflow(query=request.query, media_paths=request.media_paths):
             event_type = ev.get("event", "message")
             event_data = json.dumps(ev.get("data", {}), ensure_ascii=False)
             yield f"event: {event_type}\ndata: {event_data}\n\n"

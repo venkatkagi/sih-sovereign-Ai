@@ -16,30 +16,124 @@ import UnifiedArtifactViewer from './components/main/UnifiedArtifactViewer';
 import { AVAILABLE_MODELS } from './data/mockData';
 import { sendAgentMessage, uploadDocument, uploadWorkspaceFile, checkBackendHealth } from './services/api';
 
+const SESSIONS_STORAGE_KEY = 'vaultmind_sessions';
+const CURRENT_SESSION_KEY = 'vaultmind_current_session_id';
+const RECENT_ARTIFACTS_KEY = 'vaultmind_recent_artifacts';
+
+function getInitialSessions(defaultModel) {
+  try {
+    const saved = localStorage.getItem(SESSIONS_STORAGE_KEY);
+    if (saved) {
+      const parsed = JSON.parse(saved);
+      if (Array.isArray(parsed) && parsed.length > 0) {
+        return parsed.map((s) => ({
+          id: s.id || `session-${Date.now()}`,
+          title: s.title || 'New Conversation',
+          model: (s.model && AVAILABLE_MODELS.find((m) => m.id === s.model.id)) || s.model || defaultModel,
+          messages: Array.isArray(s.messages)
+            ? s.messages.map((m) => ({
+                ...m,
+                isCreating: false,
+              }))
+            : [],
+        }));
+      }
+    }
+  } catch (e) {
+    console.warn('Failed to load saved sessions from localStorage:', e);
+  }
+  return [{ id: 'session-1', title: 'New Conversation', messages: [], model: defaultModel }];
+}
+
+function getInitialCurrentSessionId(initialSessions) {
+  try {
+    const savedId = localStorage.getItem(CURRENT_SESSION_KEY);
+    if (savedId && initialSessions.some((s) => s.id === savedId)) {
+      return savedId;
+    }
+  } catch (e) {
+    console.warn('Failed to load currentSessionId from localStorage:', e);
+  }
+  return initialSessions[0]?.id || 'session-1';
+}
+
+function getInitialRecentArtifacts() {
+  try {
+    const saved = localStorage.getItem(RECENT_ARTIFACTS_KEY);
+    if (saved) {
+      const parsed = JSON.parse(saved);
+      if (Array.isArray(parsed)) return parsed;
+    }
+  } catch (e) {
+    console.warn('Failed to load recentArtifacts from localStorage:', e);
+  }
+  return [];
+}
+
 export default function App() {
   const [selectedFile, setSelectedFile] = useState(null);
   const [isSidebarOpen, setIsSidebarOpen] = useState(true);
   const [activeArtifact, setActiveArtifact] = useState(null);
-  const [recentArtifacts, setRecentArtifacts] = useState([]); // accumulates AI-generated files
 
   const defaultModel = AVAILABLE_MODELS.find(m => m.id === 'qwen3-4b') || AVAILABLE_MODELS[1] || AVAILABLE_MODELS[0];
-  const [selectedModel, setSelectedModel] = useState(defaultModel);
 
-  // Chat State
-  const [sessions, setSessions] = useState([
-    { id: 'session-1', title: 'New Conversation', messages: [], model: defaultModel }
-  ]);
-  const [currentSessionId, setCurrentSessionId] = useState('session-1');
+  // Chat State initialized from localStorage
+  const [sessions, setSessions] = useState(() => getInitialSessions(defaultModel));
+  const [currentSessionId, setCurrentSessionId] = useState(() => getInitialCurrentSessionId(sessions));
+  const [recentArtifacts, setRecentArtifacts] = useState(() => getInitialRecentArtifacts());
+
+  const currentSession = sessions.find((s) => s.id === currentSessionId) || sessions[0] || {
+    id: 'session-1',
+    title: 'New Conversation',
+    messages: [],
+    model: defaultModel,
+  };
+  const sessionModel = currentSession.model || defaultModel;
+  const [selectedModel, setSelectedModel] = useState(sessionModel);
+
   const [prompt, setPrompt] = useState('');
   const [isGenerating, setIsGenerating] = useState(false);
   const abortControllerRef = useRef(null);
 
-  const currentSession = sessions.find((s) => s.id === currentSessionId) || sessions[0];
-  const sessionModel = currentSession.model || selectedModel;
-
   useEffect(() => {
     checkBackendHealth();
   }, []);
+
+  // Sync sessions to localStorage
+  useEffect(() => {
+    try {
+      localStorage.setItem(SESSIONS_STORAGE_KEY, JSON.stringify(sessions));
+    } catch (e) {
+      console.warn('Failed to persist sessions to localStorage:', e);
+    }
+  }, [sessions]);
+
+  // Sync currentSessionId to localStorage
+  useEffect(() => {
+    try {
+      if (currentSessionId) {
+        localStorage.setItem(CURRENT_SESSION_KEY, currentSessionId);
+      }
+    } catch (e) {
+      console.warn('Failed to persist currentSessionId to localStorage:', e);
+    }
+  }, [currentSessionId]);
+
+  // Sync recentArtifacts to localStorage
+  useEffect(() => {
+    try {
+      localStorage.setItem(RECENT_ARTIFACTS_KEY, JSON.stringify(recentArtifacts));
+    } catch (e) {
+      console.warn('Failed to persist recentArtifacts to localStorage:', e);
+    }
+  }, [recentArtifacts]);
+
+  // Sync selectedModel whenever current session model changes
+  useEffect(() => {
+    if (currentSession?.model) {
+      setSelectedModel(currentSession.model);
+    }
+  }, [currentSessionId, currentSession?.model]);
 
   const handleNewChat = () => {
     if (isGenerating) return;

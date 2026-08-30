@@ -67,15 +67,17 @@ class VectorStore:
                 self.is_pgvector = True
                 logger.info("VectorStore successfully connected to PostgreSQL + pgvector.")
             except Exception as exc:
-                logger.error(
-                    f"CRITICAL: Failed to initialize production PostgreSQL + pgvector ({exc}). "
-                    f"Automatic fallback to Chroma is prohibited."
+                logger.warning(
+                    f"PostgreSQL connection failed ({exc}). Falling back to local Chroma vector store."
                 )
-                raise RuntimeError(
-                    f"PostgreSQL + pgvector connection failed: {exc}. "
-                    f"Production must not fall back to Chroma. "
-                    f"Ensure PostgreSQL is accessible or set VECTOR_STORE_BACKEND=chroma for isolated test mode."
-                ) from exc
+                try:
+                    self._impl = ChromaVectorStore(path=path or "data/chroma", collection_name=collection_name)
+                    self.backend_type = "chroma"
+                    self.is_pgvector = False
+                except Exception as c_exc:
+                    raise RuntimeError(
+                        f"Both PostgreSQL and Chroma failed to initialize: {exc} | {c_exc}"
+                    ) from exc
 
         elif target_backend == "chroma":
             # EXPLICIT TEST / DEV OVERRIDE

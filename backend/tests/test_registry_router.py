@@ -77,34 +77,58 @@ class TestModelRegistryAndRouter(unittest.TestCase):
         self.assertEqual(decision_simple.model_config.name, "qwen3-4b")
         self.assertIn(decision_simple.complexity, ("low", "medium"))
 
-        # High complexity text query (auditing, cross-document, compare, compliance) -> qwen3-8b
+        # Text query (cross-document / compliance) -> qwen3-4b (4B model policy)
         decision_complex = router.route_with_decision(
             "Please conduct a comprehensive audit across documents, compare the safety standards in section 4.1 "
             "with our regulatory compliance checklist, and reconcile all discrepancies step by step."
         )
-        self.assertEqual(decision_complex.model_config.name, "qwen3-8b")
+        self.assertEqual(decision_complex.model_config.name, "qwen3-4b")
         self.assertEqual(decision_complex.complexity, "high")
         self.assertIn("Text-only input with High complexity", decision_complex.reason)
 
     def test_router_multimodal_routing(self):
         router = DynamicRouter()
 
-        # Image attachment + standard query -> gemma3-4b or qwen3-vl-4b
-        decision_img_simple = router.route_with_decision(
+        # PNG image attachment -> gemma3-4b
+        decision_png = router.route_with_decision(
             query="What color is shown in this chart?",
             media_paths=["chart.png"]
         )
-        self.assertIn(decision_img_simple.model_config.name, ("gemma3-4b", "qwen3-vl-4b"))
-        self.assertIn("image", decision_img_simple.modalities)
+        self.assertEqual(decision_png.model_config.name, "gemma3-4b")
+        self.assertIn("image", decision_png.modalities)
 
-        # Image attachment + complex reasoning -> gemma3-8b
-        decision_img_complex = router.route_with_decision(
-            query="Perform an in-depth critical analysis and audit of the financial table in this image, evaluate the tradeoffs, and compute discrepancies.",
-            media_paths=["financial_table.jpg"]
+        # JPG image attachment -> gemma3-4b
+        decision_jpg = router.route_with_decision(
+            query="Inspect the mechanical pump in this photo",
+            media_paths=["pump_photo.jpg"]
         )
-        self.assertEqual(decision_img_complex.model_config.name, "gemma3-8b")
-        self.assertEqual(decision_img_complex.complexity, "high")
-        self.assertIn("Multimodal image input with High complexity", decision_img_complex.reason)
+        self.assertEqual(decision_jpg.model_config.name, "gemma3-4b")
+        self.assertIn("image", decision_jpg.modalities)
+
+        # JPEG image attachment -> gemma3-4b
+        decision_jpeg = router.route_with_decision(
+            query="Extract equipment tags from this JPEG diagram",
+            media_paths=["schematic.jpeg"]
+        )
+        self.assertEqual(decision_jpeg.model_config.name, "gemma3-4b")
+        self.assertIn("image", decision_jpeg.modalities)
+
+        # Image input mentioned in prompt text without media_paths -> gemma3-4b
+        decision_prompt_png = router.route_with_decision("Please analyze diagram.png and report findings")
+        self.assertEqual(decision_prompt_png.model_config.name, "gemma3-4b")
+        self.assertIn("image", decision_prompt_png.modalities)
+
+        decision_prompt_jpg = router.route_with_decision("Check boiler.jpg for corrosion")
+        self.assertEqual(decision_prompt_jpg.model_config.name, "gemma3-4b")
+        self.assertIn("image", decision_prompt_jpg.modalities)
+
+        decision_prompt_jpeg = router.route_with_decision("Inspect valve.jpeg for leaks")
+        self.assertEqual(decision_prompt_jpeg.model_config.name, "gemma3-4b")
+        self.assertIn("image", decision_prompt_jpeg.modalities)
+
+        decision_prompt_keyword = router.route_with_decision("Can you inspect this drawing image and find anomalies?")
+        self.assertEqual(decision_prompt_keyword.model_config.name, "gemma3-4b")
+        self.assertIn("image", decision_prompt_keyword.modalities)
 
         # Video attachment -> qwen3-vl-4b
         decision_video = router.route_with_decision(
@@ -117,21 +141,20 @@ class TestModelRegistryAndRouter(unittest.TestCase):
     def test_router_complexity_override_and_vram(self):
         router = DynamicRouter()
 
-        # Explicit complexity override
-        config_override = router.route(
+        # Text query -> qwen3-4b
+        config = router.route(
             query="Hello",
             complexity_override="high"
         )
-        self.assertEqual(config_override.name, "qwen3-8b")
+        self.assertEqual(config.name, "qwen3-4b")
 
-        # VRAM limit capping (e.g. max 4.0 GB should avoid qwen3-8b and use qwen3-4b)
+        # VRAM limit capping (e.g. max 4.0 GB should use qwen3-4b)
         decision_vram = router.route_with_decision(
             query="Perform a deep audit across all documents and reconcile discrepancies",
             max_vram_gb=4.0
         )
         self.assertLessEqual(decision_vram.model_config.target_vram_gb, 4.0)
         self.assertEqual(decision_vram.model_config.name, "qwen3-4b")
-        self.assertIn("VRAM budget capped", decision_vram.reason)
 
     def test_router_get_model_instance(self):
         router = DynamicRouter()

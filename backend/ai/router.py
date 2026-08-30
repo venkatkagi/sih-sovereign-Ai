@@ -62,8 +62,9 @@ class DynamicRouter:
         self,
         media_paths: Optional[list[str]] = None,
         explicit_modalities: Optional[set[str]] = None,
+        query: Optional[str] = None,
     ) -> set[str]:
-        """Detect required modalities from input attachments or explicit declarations."""
+        """Detect required modalities from input attachments, explicit declarations, or query text."""
         modalities = {"text"}
         if explicit_modalities:
             modalities.update({m.lower() for m in explicit_modalities})
@@ -76,6 +77,25 @@ class DynamicRouter:
                     modalities.add("image")
                 elif ext in IMAGE_EXTENSIONS:
                     modalities.add("image")
+
+        if query:
+            q_lower = query.lower()
+            # Check for image file extensions or image terms in prompt
+            has_image_ext = any(ext in q_lower for ext in IMAGE_EXTENSIONS)
+            has_image_kw = bool(re.search(
+                r"\b(png|jpg|jpeg|webp|bmp|tiff|gif|image|images|photo|photos|picture|pictures|drawing|drawings|diagram|diagrams|schematic|schematics|p&id|visual|vision|screenshot|screenshots)\b",
+                q_lower
+            ))
+            if has_image_ext or has_image_kw:
+                modalities.add("image")
+
+            # Check for video file extensions or video terms in prompt
+            has_video_ext = any(ext in q_lower for ext in VIDEO_EXTENSIONS)
+            has_video_kw = bool(re.search(r"\b(mp4|avi|mov|mkv|webm|video|videos|footage|recording|recordings)\b", q_lower))
+            if has_video_ext or has_video_kw:
+                modalities.add("video")
+                modalities.add("image")
+
         return modalities
 
     def analyze_complexity(
@@ -158,10 +178,10 @@ class DynamicRouter:
         explicit_modalities: Optional[set[str]] = None,
     ) -> RoutingDecision:
         """
-        Evaluate query and route to optimal model, returning a full RoutingDecision
-        for explainability and auditing.
+        Evaluate query and route to optimal model (strictly 4B models: gemma3-4b, qwen3-4b, qwen3-vl-4b),
+        returning a full RoutingDecision for explainability and auditing.
         """
-        modalities = self.detect_modalities(media_paths, explicit_modalities)
+        modalities = self.detect_modalities(media_paths, explicit_modalities, query=query)
         is_multimodal = ("image" in modalities) or ("video" in modalities)
         has_video = "video" in modalities
 
@@ -172,7 +192,7 @@ class DynamicRouter:
         else:
             complexity, comp_score, factors = self.analyze_complexity(query, media_paths)
 
-        # Apply Routing Rules defined in AGENTS.md
+        # Apply Routing Rules (Strictly 4B local models - no 8B models)
         chosen_config: Optional[ModelConfig] = None
         routing_reason = ""
 
@@ -180,19 +200,13 @@ class DynamicRouter:
             if has_video:
                 chosen_config = self.registry.get("qwen3-vl-4b") or self.registry.get("gemma3-4b")
                 routing_reason = "Video modality detected -> Selected qwen3-vl-4b (Video capability)"
-            elif complexity == "high":
-                chosen_config = self.registry.get("gemma3-8b") or self.registry.get("gemma3-4b") or self.registry.get("qwen3-vl-4b")
-                routing_reason = "Multimodal image input with High complexity -> Selected gemma3-8b (High reasoning Gemma vision model)"
             else:
-                chosen_config = self.registry.get("gemma3-4b") or self.registry.get("gemma3-8b") or self.registry.get("qwen3-vl-4b")
-                routing_reason = f"Multimodal image input with {complexity.capitalize()} complexity -> Selected gemma3-4b (Fast Gemma vision model)"
+                # All image inputs (PNG, JPG, JPEG, diagrams, drawings, visual inspection) route to Gemma 3 (gemma3-4b)
+                chosen_config = self.registry.get("gemma3-4b") or self.registry.get("qwen3-vl-4b")
+                routing_reason = f"Multimodal image input (PNG/JPG/JPEG) with {complexity.capitalize()} complexity -> Selected gemma3-4b (Gemma 3 vision model)"
         else:
-            if complexity == "high":
-                chosen_config = self.registry.get("qwen3-8b") or self.registry.get("qwen3-4b")
-                routing_reason = "Text-only input with High complexity -> Selected qwen3-8b (Deep reasoning & audit)"
-            else:
-                chosen_config = self.registry.get("qwen3-4b")
-                routing_reason = f"Text-only input with {complexity.capitalize()} complexity -> Selected qwen3-4b (Fast 4B text model)"
+            chosen_config = self.registry.get("qwen3-4b")
+            routing_reason = f"Text-only input with {complexity.capitalize()} complexity -> Selected qwen3-4b (Fast 4B text model)"
 
         # Fallback if preferred model wasn't found in registry
         if not chosen_config:
@@ -210,7 +224,6 @@ class DynamicRouter:
                 if m.target_vram_gb <= max_vram_gb and modalities.issubset(m.modalities)
             ]
             if vram_candidates:
-                # Pick candidate with highest complexity support within VRAM
                 ranks = {"low": 1, "medium": 2, "high": 3}
                 vram_candidates.sort(key=lambda m: ranks.get(m.max_complexity, 1), reverse=True)
                 previous_name = chosen_config.name

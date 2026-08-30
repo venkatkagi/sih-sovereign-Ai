@@ -69,6 +69,7 @@ export default function AutoRouteView() {
     abortControllerRef.current = controller;
 
     const textQuery = userPrompt.trim() || (files.length > 0 ? `Analyze attached file ${files[0].name}` : '');
+    const mediaPaths = files.map((f) => f.path || f.name || f).filter(Boolean);
 
     const userMessage = {
       role: 'user',
@@ -94,6 +95,7 @@ export default function AutoRouteView() {
     try {
       await runAutoRouteWorkflow({
         query: textQuery,
+        mediaPaths: mediaPaths,
         signal: controller.signal,
         onEvent: (event, data) => {
           if (controller.signal.aborted) return;
@@ -131,7 +133,7 @@ export default function AutoRouteView() {
               assistantMsg.artifact_path = data.artifact_path;
             } else if (event === 'task_completed') {
               assistantMsg.isCreating = false;
-              assistantMsg.model_used = data.routing_decision?.selected_model || data.routing_decision?.ollama_model || 'qwen3:8b';
+              assistantMsg.model_used = data.routing_decision?.selected_model || data.routing_decision?.ollama_model || (data.task_type === 'MULTIMODAL_VISION' ? 'gemma3:4b' : 'qwen3:4b');
               assistantMsg.timings = data.timings;
               assistantMsg.findings = data.findings || assistantMsg.findings;
               assistantMsg.generated_code = data.generated_code || assistantMsg.generated_code;
