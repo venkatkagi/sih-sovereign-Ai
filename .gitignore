@@ -52,6 +52,3 @@ workspace/sandbox/*.py
 workspace/sandbox/*.log
 workspace/sandbox/*.txt
 
-
-# exclude all .md files
-*.md

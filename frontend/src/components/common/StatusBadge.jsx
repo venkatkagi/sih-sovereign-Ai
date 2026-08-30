@@ -8,7 +8,7 @@ export default function StatusBadge() {
         <span className="font-medium text-xs">Air-Gap Active</span>
       </div>
       <span className="text-[10px] bg-emerald-950 px-1.5 py-0.5 rounded border border-emerald-800 font-mono">
-        0 KB Out
+        0 kb  in and out
       </span>
     </div>
   );
